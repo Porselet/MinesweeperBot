@@ -75,24 +75,42 @@ namespace MinesweeperBot
             int screenY = windowOffsetY + cellCenterY;
 
             SetCursorPos(screenX, screenY);
-            Thread.Sleep(30); // Небольшая пауза, чтобы курсор точно переместился
+            Thread.Sleep(10); // Было 30, стало 10
 
             if (rightClick)
             {
-                // Правая кнопка (Флаг)
                 mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
-                Thread.Sleep(50);
+                Thread.Sleep(10); // Было 50
                 mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
             }
             else
             {
-                // Левая кнопка (Открыть)
                 mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
-                Thread.Sleep(50);
+                Thread.Sleep(10);
                 mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
             }
 
-            Thread.Sleep(100); // Пауза после клика, чтобы игра успела отреагировать
+            Thread.Sleep(20); // Было 100, стало 20
         }
+
+        public static void ClickSmiley()
+        {
+            if (!initialized) Initialize();
+
+            // Точные координаты смайлика, которые мы нашли
+            int smileyX = 142;
+            int smileyY = 73;
+
+            int screenX = windowOffsetX + smileyX;
+            int screenY = windowOffsetY + smileyY;
+
+            SetCursorPos(screenX, screenY);
+            Thread.Sleep(50);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+            Thread.Sleep(50);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            Thread.Sleep(500); // Ждем, чтобы игра сгенерировала новое поле
+        }
+
     }
 }

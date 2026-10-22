@@ -12,6 +12,11 @@ namespace MinesweeperBot
         const int StartY = 101;
         const int CellSize = 16;
 
+        // === НАСТРОЙКИ СКОРОСТИ ===
+        const int DelayAfterClick = 50;      // Пауза после клика (было 150)
+        const int DelayBetweenTurns = 150;   // Пауза между ходами (было 500)
+        const int DelayBeforeStart = 3000;   // Пауза перед стартом (оставим 3 сек)
+
         static void Main(string[] args)
         {
             Logger.Init();
@@ -31,8 +36,8 @@ namespace MinesweeperBot
                 return;
             }
 
-            Logger.Log("Начинаем через 3 секунды...");
-            Thread.Sleep(3000);
+            Logger.Log($"Начинаем через {DelayBeforeStart / 1000} секунды...");
+            Thread.Sleep(DelayBeforeStart);
 
             int turn = 1;
             while (true)
@@ -62,30 +67,42 @@ namespace MinesweeperBot
 
                 Logger.LogBoard(board, Solver.GridSize);
 
-                // ПРОВЕРКА НА КОНЕЦ ИГРЫ
                 if (solver.IsGameOver(board, out string gameOverReason))
                 {
                     Logger.Log($"ИГРА ОКОНЧЕНА: {gameOverReason}");
-                    bmp.Save("game_over.png", ImageFormat.Png);
+                    bmp.Save($"game_over_{turn}.png", ImageFormat.Png);
                     bmp.Dispose();
-                    break;
+
+                    if (gameOverReason.Contains("ВЗРЫВ"))
+                    {
+                        Logger.Log("Начинаем новую игру (клик по смайлику)...");
+                        InputSimulator.ClickSmiley();
+                        turn = 1;
+                        continue;
+                    }
+                    else
+                    {
+                        Logger.Log("ПОБЕДА! Бот выиграл!");
+                        break;
+                    }
                 }
 
                 var moves = solver.FindMoves(board);
 
                 if (moves.Count == 0)
                 {
-                    Logger.Log("Логика зашла в тупик. Делаем ход наугад...");
+                    Logger.Log("Логика зашла в тупик. Ищем лучшую клетку для хода наугад...");
 
-                    string randomMove = solver.FindRandomMove(board);
-                    if (randomMove != null)
+                    string smartMove = solver.FindSmartRandomMove(board);
+                    if (smartMove != null)
                     {
-                        moves.Add(randomMove);
+                        moves.Add(smartMove);
+                        Logger.Log($"  -> Умный ход: {smartMove}");
                     }
                     else
                     {
-                        Logger.Log("Нет закрытых клеток! Игра окончена (победа или всё в флагах).");
-                        bmp.Save("game_over.png", ImageFormat.Png);
+                        Logger.Log("Нет закрытых клеток! Игра окончена.");
+                        bmp.Save($"game_over_{turn}.png", ImageFormat.Png);
                         bmp.Dispose();
                         break;
                     }
@@ -120,13 +137,13 @@ namespace MinesweeperBot
                         InputSimulator.ClickCell(x, y, true);
                     }
 
-                    Thread.Sleep(150);
+                    Thread.Sleep(DelayAfterClick);
                 }
 
                 bmp.Save("last_screenshot.png", ImageFormat.Png);
                 bmp.Dispose();
 
-                Thread.Sleep(500);
+                Thread.Sleep(DelayBetweenTurns);
                 turn++;
             }
 
