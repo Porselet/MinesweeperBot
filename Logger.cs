@@ -16,10 +16,13 @@ namespace MinesweeperBot
 
         public static void Log(string message)
         {
-            string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+            // Было: HH:mm:ss
+            // Стало: HH:mm:ss.fff (fff = миллисекунды)
+            string line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
             Console.WriteLine(line);
             File.AppendAllText(logFile, line + "\n");
         }
+
 
         // Вывод матрицы поля в лог
         public static void LogBoard(int[,] board, int gridSize)

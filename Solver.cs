@@ -87,6 +87,74 @@ namespace MinesweeperBot
             return result;
         }
 
+        // Ищем паттерн 1-2-1 по горизонтали и вертикали
+        public List<string> FindPattern121(int[,] board)
+        {
+            List<string> moves = new List<string>();
+
+            // Проверяем по горизонтали (строки)
+            for (int y = 0; y < GridSize; y++)
+            {
+                for (int x = 1; x < GridSize - 1; x++)
+                {
+                    // Если есть последовательность 1-2-1 по горизонтали
+                    if (board[y, x] == 2 && board[y, x - 1] == 1 && board[y, x + 1] == 1)
+                    {
+                        // Проверяем, что клетки над ними закрыты
+                        // (или под ними, в зависимости от того, где мы ищем)
+                        for (int dy = -1; dy <= 1; dy += 2)
+                        {
+                            int ny = y + dy;
+                            if (ny < 0 || ny >= GridSize) continue;
+
+                            // Если клетки над (или под) единицами закрыты — ставим флаги
+                            if (board[ny, x - 1] == Closed && board[ny, x + 1] == Closed)
+                            {
+                                moves.Add($"FLAG ({x - 1}, {ny})");
+                                moves.Add($"FLAG ({x + 1}, {ny})");
+
+                                // А клетка над двойкой — безопасна
+                                if (board[ny, x] == Closed)
+                                {
+                                    moves.Add($"OPEN ({x}, {ny})");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Аналогично для вертикали (столбцы)
+            for (int x = 0; x < GridSize; x++)
+            {
+                for (int y = 1; y < GridSize - 1; y++)
+                {
+                    if (board[y, x] == 2 && board[y - 1, x] == 1 && board[y + 1, x] == 1)
+                    {
+                        for (int dx = -1; dx <= 1; dx += 2)
+                        {
+                            int nx = x + dx;
+                            if (nx < 0 || nx >= GridSize) continue;
+
+                            if (board[y - 1, nx] == Closed && board[y + 1, nx] == Closed)
+                            {
+                                moves.Add($"FLAG ({nx}, {y - 1})");
+                                moves.Add($"FLAG ({nx}, {y + 1})");
+
+                                if (board[y, nx] == Closed)
+                                {
+                                    moves.Add($"OPEN ({y}, {nx})");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return moves;
+        }
+
+
         // УМНЫЙ ХОД НАУГАД: ищем закрытую клетку с максимальным числом открытых соседей
         // УМНЫЙ ХОД НАУГАД: ищем закрытую клетку с максимальным числом открытых соседей
         public string FindSmartRandomMove(int[,] board)

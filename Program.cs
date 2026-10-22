@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Threading;
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 namespace MinesweeperBot
 {
@@ -12,10 +14,17 @@ namespace MinesweeperBot
         const int StartY = 101;
         const int CellSize = 16;
 
-        // === НАСТРОЙКИ СКОРОСТИ ===
-        const int DelayAfterClick = 50;      // Пауза после клика (было 150)
-        const int DelayBetweenTurns = 150;   // Пауза между ходами (было 500)
-        const int DelayBeforeStart = 3000;   // Пауза перед стартом (оставим 3 сек)
+        const int DelayAfterClick = 20;
+        const int DelayBetweenTurns = 50;
+        const int DelayBeforeStart = 3000;
+
+        // Win32 API для глобальной проверки клавиши
+        [DllImport("user32.dll")]
+        static extern short GetAsyncKeyState(int vKey);
+
+        const int VK_F12 = 0x7B;
+
+        static bool stopRequested = false;
 
         static void Main(string[] args)
         {
@@ -31,39 +40,49 @@ namespace MinesweeperBot
             }
             catch (Exception ex)
             {
-                Logger.Log($"Ошибка инициализации мыши: {ex.Message}");
+                Logger.Log($"Ошибка: {ex.Message}");
                 Console.ReadKey();
                 return;
             }
 
+            Logger.Log("Нажми F12 для экстренной остановки в любой момент!");
             Logger.Log($"Начинаем через {DelayBeforeStart / 1000} секунды...");
             Thread.Sleep(DelayBeforeStart);
 
             int turn = 1;
             while (true)
             {
+                // Проверка F12 перед ходом
+                if (IsStopRequested())
+                {
+                    Logger.Log("F12 нажата! Экстренная остановка.");
+                    break;
+                }
+
                 Logger.Log($"\n--- ХОД #{turn} ---");
 
+                Stopwatch sw = Stopwatch.StartNew();
                 Bitmap bmp = ScreenCapture.CaptureGameWindow();
+                sw.Stop();
+                long captureTime = sw.ElapsedMilliseconds;
+
                 if (bmp == null) { Logger.Log("Окно потеряно!"); break; }
 
+                sw.Restart();
                 int[,] board = new int[Solver.GridSize, Solver.GridSize];
                 for (int row = 0; row < Solver.GridSize; row++)
                 {
                     for (int col = 0; col < Solver.GridSize; col++)
                     {
-                        Rectangle cellRect = new Rectangle(
-                            StartX + (col * CellSize),
-                            StartY + (row * CellSize),
-                            CellSize,
-                            CellSize
-                        );
-                        using (Bitmap cellBmp = bmp.Clone(cellRect, bmp.PixelFormat))
-                        {
-                            board[row, col] = matcher.IdentifyCell(cellBmp);
-                        }
+                        int cellX = StartX + (col * CellSize);
+                        int cellY = StartY + (row * CellSize);
+                        board[row, col] = matcher.IdentifyCellFast(bmp, cellX, cellY, CellSize);
                     }
                 }
+                sw.Stop();
+                long recognizeTime = sw.ElapsedMilliseconds;
+
+                Logger.Log($"  [СКРИНШОТ: {captureTime} мс, РАСПОЗНАВАНИЕ: {recognizeTime} мс]");
 
                 Logger.LogBoard(board, Solver.GridSize);
 
@@ -73,58 +92,72 @@ namespace MinesweeperBot
                     bmp.Save($"game_over_{turn}.png", ImageFormat.Png);
                     bmp.Dispose();
 
-                    if (gameOverReason.Contains("ВЗРЫВ"))
-                    {
-                        Logger.Log("Начинаем новую игру (клик по смайлику)...");
-                        InputSimulator.ClickSmiley();
-                        turn = 1;
-                        continue;
-                    }
-                    else
-                    {
-                        Logger.Log("ПОБЕДА! Бот выиграл!");
-                        break;
-                    }
+                    // В ЛЮБОМ СЛУЧАЕ (взрыв или победа) — начинаем новую игру
+                    Logger.Log("Новая игра (клик по смайлику)...");
+                    InputSimulator.ClickSmiley();
+                    turn = 1;
+                    continue;
                 }
 
+                sw.Restart();
                 var moves = solver.FindMoves(board);
 
                 if (moves.Count == 0)
                 {
-                    Logger.Log("Логика зашла в тупик. Ищем лучшую клетку для хода наугад...");
+                    Logger.Log("Тупик. Ищем паттерн 1-2-1...");
+                    var patternMoves = solver.FindPattern121(board);
 
-                    string smartMove = solver.FindSmartRandomMove(board);
-                    if (smartMove != null)
+                    if (patternMoves.Count > 0)
                     {
-                        moves.Add(smartMove);
-                        Logger.Log($"  -> Умный ход: {smartMove}");
+                        moves.AddRange(patternMoves);
+                        Logger.Log($"  -> Найден паттерн 1-2-1: {patternMoves.Count} действий!");
                     }
                     else
                     {
-                        Logger.Log("Нет закрытых клеток! Игра окончена.");
-                        bmp.Save($"game_over_{turn}.png", ImageFormat.Png);
-                        bmp.Dispose();
-                        break;
+                        Logger.Log("Паттерн не найден. Ищем лучшую клетку для хода наугад...");
+                        string smartMove = solver.FindSmartRandomMove(board);
+                        if (smartMove != null)
+                        {
+                            moves.Add(smartMove);
+                        }
                     }
                 }
+                sw.Stop();
+                long solveTime = sw.ElapsedMilliseconds;
 
-                Logger.Log($"Найдено {moves.Count} действий.");
+                Logger.Log($"  Найдено {moves.Count} действий (поиск: {solveTime} мс).");
 
+                sw.Restart();
                 foreach (var move in moves)
                 {
+                    // ПРОВЕРКА F12 ВНУТРИ СЕРИИ КЛИКОВ
+                    if (IsStopRequested())
+                    {
+                        Logger.Log("F12 нажата! Останавливаюсь на середине серии.");
+                        stopRequested = true;
+                        break;
+                    }
+
                     if (string.IsNullOrWhiteSpace(move)) continue;
 
                     Match match = Regex.Match(move, @"^(\w+)\s*\((\d+),\s*(\d+)\)$");
-
-                    if (!match.Success)
-                    {
-                        Logger.Log($"  !! Не удалось распарсить: '{move}'");
-                        continue;
-                    }
+                    if (!match.Success) continue;
 
                     string action = match.Groups[1].Value;
                     int x = int.Parse(match.Groups[2].Value);
                     int y = int.Parse(match.Groups[3].Value);
+
+                    if (action == "OPEN" && board[y, x] != Solver.Closed)
+                    {
+                        Logger.Log($"  -> Пропускаю OPEN ({x}, {y}): клетка не закрыта");
+                        continue;
+                    }
+
+                    if (action == "FLAG" && (board[y, x] == Solver.Flag || board[y, x] == Solver.Empty))
+                    {
+                        Logger.Log($"  -> Пропускаю FLAG ({x}, {y}): клетка уже {board[y, x]}");
+                        continue;
+                    }
 
                     if (action == "OPEN")
                     {
@@ -139,16 +172,32 @@ namespace MinesweeperBot
 
                     Thread.Sleep(DelayAfterClick);
                 }
+                sw.Stop();
+                long clickTime = sw.ElapsedMilliseconds;
 
-                bmp.Save("last_screenshot.png", ImageFormat.Png);
+                Logger.Log($"  [КЛИКИ: {clickTime} мс]");
+
+                if (stopRequested)
+                {
+                    Logger.Log("Остановка по запросу F12.");
+                    bmp.Dispose();
+                    break;
+                }
+
                 bmp.Dispose();
-
                 Thread.Sleep(DelayBetweenTurns);
                 turn++;
             }
 
-            Logger.Log("Игра завершена. Нажмите любую клавишу...");
+            Logger.Log("Игра завершена. Нажмите любую клавишу для выхода...");
             Console.ReadKey();
+        }
+
+        // Проверка, нажата ли F12
+        static bool IsStopRequested()
+        {
+            // GetAsyncKeyState возвращает 0x8000, если клавиша нажата
+            return (GetAsyncKeyState(VK_F12) & 0x8000) != 0;
         }
     }
 }
