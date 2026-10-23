@@ -18,6 +18,14 @@ namespace MinesweeperBot
         private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
         private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
 
+
+        [DllImport("user32.dll")]
+        static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        private const uint KEYEVENTF_KEYDOWN = 0x0000;
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+        private const byte VK_F2 = 0x71; // виртуальный код F2
+
         // Получаем координаты окна игры (нам нужно его смещение на экране)
         [DllImport("user32.dll")]
         static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
@@ -64,12 +72,12 @@ namespace MinesweeperBot
         // Переводим координаты клетки (col, row) в координаты экрана
         // Для этого используем те же параметры, что и при захвате:
         // StartX = 15, StartY = 101, CellSize = 16
-        public static void ClickCell(int col, int row, bool rightClick = false)
+        public static void ClickCell(int col, int row, GameLevel level, bool rightClick = false)
         {
             if (!initialized) Initialize();
 
-            int cellCenterX = 15 + (col * 16) + (16 / 2);
-            int cellCenterY = 101 + (row * 16) + (16 / 2);
+            int cellCenterX = level.StartX + (col * level.CellSize) + (level.CellSize / 2);
+            int cellCenterY = level.StartY + (row * level.CellSize) + (level.CellSize / 2);
 
             int screenX = windowOffsetX + cellCenterX;
             int screenY = windowOffsetY + cellCenterY;
@@ -93,22 +101,15 @@ namespace MinesweeperBot
             Thread.Sleep(20); // Было 100, стало 20
         }
 
-        public static void ClickSmiley()
+        public static void PressNewGame()
         {
             if (!initialized) Initialize();
 
-            // Точные координаты смайлика, которые мы нашли
-            int smileyX = 142;
-            int smileyY = 73;
-
-            int screenX = windowOffsetX + smileyX;
-            int screenY = windowOffsetY + smileyY;
-
-            SetCursorPos(screenX, screenY);
+            // F2 — стандартная горячая клавиша "новая игра" в Сапёре.
+            // Работает независимо от положения смайлика и DPI.
+            keybd_event(VK_F2, 0, KEYEVENTF_KEYDOWN, UIntPtr.Zero);
             Thread.Sleep(50);
-            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
-            Thread.Sleep(50);
-            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+            keybd_event(VK_F2, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             Thread.Sleep(500); // Ждем, чтобы игра сгенерировала новое поле
         }
 

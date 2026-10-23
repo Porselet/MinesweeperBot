@@ -1,242 +1,75 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
+﻿using System.Collections.Generic;
+using MinesweeperBot.Core;
+using MinesweeperBot.Probability;
+using MinesweeperBot.Rules;
 
 namespace MinesweeperBot
 {
+    // Фасад: снаружи видны только FindMoves, FindPatterns, FindSafestMove, IsGameOver.
+    // Вся логика разложена по Core/Rules/Probability.
     public class Solver
     {
-        public const int GridSize = 16;
-        public const int Closed = -1;
-        public const int Empty = 0;
-        public const int Flag = -2;
-        public const int Mine = -3;
-        public const int MineRed = -4;
+        public int GridWidth { get; }
+        public int GridHeight { get; }
+        public int TotalMines { get; }
+        public int StartX { get; }
+        public int StartY { get; }
+        public int CellSize { get; }
 
-        private List<Point> GetNeighbors(int x, int y)
+        private readonly BoardHelpers _helpers;
+        private readonly DeterministicRules _deterministic;
+        private readonly PatternRules _patterns;
+        private readonly ProbabilitySolver _probability;
+
+        public Solver(GameLevel level)
         {
-            List<Point> neighbors = new List<Point>();
-            for (int dy = -1; dy <= 1; dy++)
-            {
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    if (dx == 0 && dy == 0) continue;
-                    int nx = x + dx;
-                    int ny = y + dy;
-                    if (nx >= 0 && nx < GridSize && ny >= 0 && ny < GridSize)
-                        neighbors.Add(new Point(nx, ny));
-                }
-            }
-            return neighbors;
+            GridWidth = level.GridWidth;
+            GridHeight = level.GridHeight;
+            TotalMines = level.TotalMines;
+            StartX = level.StartX;
+            StartY = level.StartY;
+            CellSize = level.CellSize;
+
+            _helpers = new BoardHelpers(GridWidth, GridHeight);
+            _deterministic = new DeterministicRules(_helpers);
+            _patterns = new PatternRules(_helpers);
+            _probability = new ProbabilitySolver(_helpers, TotalMines);
         }
 
         public List<string> FindMoves(int[,] board)
         {
-            HashSet<string> openMoves = new HashSet<string>();
-            HashSet<string> flagMoves = new HashSet<string>();
+            var openMoves = new HashSet<string>();
+            var flagMoves = new HashSet<string>();
+            _deterministic.Collect(board, openMoves, flagMoves);
 
-            for (int y = 0; y < GridSize; y++)
-            {
-                for (int x = 0; x < GridSize; x++)
-                {
-                    if (board[y, x] >= 1 && board[y, x] <= 8)
-                    {
-                        int number = board[y, x];
-                        var neighbors = GetNeighbors(x, y);
-
-                        int closedCount = 0;
-                        int flagCount = 0;
-                        List<Point> closedNeighbors = new List<Point>();
-
-                        foreach (var p in neighbors)
-                        {
-                            if (board[p.Y, p.X] == Closed)
-                            {
-                                closedCount++;
-                                closedNeighbors.Add(p);
-                            }
-                            else if (board[p.Y, p.X] == Flag)
-                            {
-                                flagCount++;
-                            }
-                        }
-
-                        // Безопасный ход
-                        if (flagCount == number && closedCount > 0)
-                        {
-                            foreach (var p in closedNeighbors)
-                                openMoves.Add($"OPEN ({p.X}, {p.Y})");
-                        }
-
-                        // Флаг
-                        int minesLeft = number - flagCount;
-                        if (closedCount > 0 && closedCount == minesLeft)
-                        {
-                            foreach (var p in closedNeighbors)
-                            {
-                                flagMoves.Add($"FLAG ({p.X}, {p.Y})");
-                            }
-                        }
-                    }
-                }
-            }
-
-            List<string> result = new List<string>();
-            result.AddRange(openMoves);
+            var result = new List<string>(openMoves);
             result.AddRange(flagMoves);
             return result;
         }
 
-        // Ищем паттерн 1-2-1 по горизонтали и вертикали
-        public List<string> FindPattern121(int[,] board)
-        {
-            List<string> moves = new List<string>();
+        public List<string> FindPatterns(int[,] board)
+            => _patterns.Find(board);
 
-            // Проверяем по горизонтали (строки)
-            for (int y = 0; y < GridSize; y++)
-            {
-                for (int x = 1; x < GridSize - 1; x++)
-                {
-                    // Если есть последовательность 1-2-1 по горизонтали
-                    if (board[y, x] == 2 && board[y, x - 1] == 1 && board[y, x + 1] == 1)
-                    {
-                        // Проверяем, что клетки над ними закрыты
-                        // (или под ними, в зависимости от того, где мы ищем)
-                        for (int dy = -1; dy <= 1; dy += 2)
-                        {
-                            int ny = y + dy;
-                            if (ny < 0 || ny >= GridSize) continue;
+        public string FindSafestMove(int[,] board, out bool isFlagRemoval, out double probability)
+            => _probability.FindSafestMove(board, out isFlagRemoval, out probability);
 
-                            // Если клетки над (или под) единицами закрыты — ставим флаги
-                            if (board[ny, x - 1] == Closed && board[ny, x + 1] == Closed)
-                            {
-                                moves.Add($"FLAG ({x - 1}, {ny})");
-                                moves.Add($"FLAG ({x + 1}, {ny})");
+        public string FindSafestMove(int[,] board, out bool isFlagRemoval)
+            => _probability.FindSafestMove(board, out isFlagRemoval);
 
-                                // А клетка над двойкой — безопасна
-                                if (board[ny, x] == Closed)
-                                {
-                                    moves.Add($"OPEN ({x}, {ny})");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        public string FindSafestMove(int[,] board)
+            => _probability.FindSafestMove(board);
 
-            // Аналогично для вертикали (столбцы)
-            for (int x = 0; x < GridSize; x++)
-            {
-                for (int y = 1; y < GridSize - 1; y++)
-                {
-                    if (board[y, x] == 2 && board[y - 1, x] == 1 && board[y + 1, x] == 1)
-                    {
-                        for (int dx = -1; dx <= 1; dx += 2)
-                        {
-                            int nx = x + dx;
-                            if (nx < 0 || nx >= GridSize) continue;
-
-                            if (board[y - 1, nx] == Closed && board[y + 1, nx] == Closed)
-                            {
-                                moves.Add($"FLAG ({nx}, {y - 1})");
-                                moves.Add($"FLAG ({nx}, {y + 1})");
-
-                                if (board[y, nx] == Closed)
-                                {
-                                    moves.Add($"OPEN ({y}, {nx})");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return moves;
-        }
-
-
-        // УМНЫЙ ХОД НАУГАД: ищем закрытую клетку с максимальным числом открытых соседей
-        // УМНЫЙ ХОД НАУГАД: ищем закрытую клетку с максимальным числом открытых соседей
-        public string FindSmartRandomMove(int[,] board)
-        {
-            // Проверяем, есть ли вообще открытые клетки на поле
-            bool hasOpenCells = false;
-            for (int y = 0; y < GridSize; y++)
-            {
-                for (int x = 0; x < GridSize; x++)
-                {
-                    if (board[y, x] != Closed)
-                    {
-                        hasOpenCells = true;
-                        break;
-                    }
-                }
-                if (hasOpenCells) break;
-            }
-
-            // Если поле полностью закрыто, кликаем в центр
-            if (!hasOpenCells)
-            {
-                return $"OPEN ({GridSize / 2}, {GridSize / 2})";
-            }
-
-            // Ищем лучшую клетку
-            Point bestCell = new Point(-1, -1);
-            int bestScore = -1000; // Начинаем с очень плохого счета
-
-            for (int y = 0; y < GridSize; y++)
-            {
-                for (int x = 0; x < GridSize; x++)
-                {
-                    if (board[y, x] == Closed)
-                    {
-                        int score = 0;
-                        var neighbors = GetNeighbors(x, y);
-
-                        // Считаем открытых соседей (чем больше, тем лучше)
-                        int openNeighbors = 0;
-                        // Считаем "опасных" соседей (чем больше, тем хуже)
-                        int dangerousNeighbors = 0;
-
-                        foreach (var p in neighbors)
-                        {
-                            if (board[p.Y, p.X] >= 0 && board[p.Y, p.X] <= 8)
-                            {
-                                openNeighbors++;
-                                // Если соседняя цифра большая (4+), то рядом с ней много мин
-                                if (board[p.Y, p.X] >= 4) dangerousNeighbors++;
-                            }
-                        }
-
-                        // Формула: +10 за каждого открытого соседа, -20 за каждого опасного
-                        score = (openNeighbors * 10) - (dangerousNeighbors * 20);
-
-                        if (score > bestScore)
-                        {
-                            bestScore = score;
-                            bestCell = new Point(x, y);
-                        }
-                    }
-                }
-            }
-
-            if (bestCell.X == -1) return null;
-            return $"OPEN ({bestCell.X}, {bestCell.Y})";
-        }
         public bool IsGameOver(int[,] board, out string reason)
         {
             reason = "";
-            int closedCount = 0;
-            int mineCount = 0;
+            int closedCount = 0, mineCount = 0;
 
-            for (int y = 0; y < GridSize; y++)
-            {
-                for (int x = 0; x < GridSize; x++)
+            for (int y = 0; y < GridHeight; y++)
+                for (int x = 0; x < GridWidth; x++)
                 {
-                    if (board[y, x] == Closed) closedCount++;
-                    if (board[y, x] == Mine || board[y, x] == MineRed) mineCount++;
+                    if (board[y, x] == BoardConstants.Closed) closedCount++;
+                    if (BoardConstants.IsMine(board[y, x])) mineCount++;
                 }
-            }
 
             if (mineCount > 0) { reason = "ВЗРЫВ! Бот наступил на мину."; return true; }
             if (closedCount == 0) { reason = "ПОБЕДА! Все клетки открыты."; return true; }

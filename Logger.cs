@@ -8,30 +8,34 @@ namespace MinesweeperBot
     {
         private static string logFile = "bot_log.txt";
 
-        // Инициализация лога (перезаписываем файл при старте)
+        // Инициализация лога: папка logs/, файл с датой и временем в имени.
         public static void Init()
         {
-            File.WriteAllText(logFile, $"=== ЛОГ ЗАПУСКА: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n\n");
+            string logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+            Directory.CreateDirectory(logDir);
+
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            logFile = Path.Combine(logDir, $"bot_log_{stamp}.txt");
+
+            File.WriteAllText(logFile,
+                $"=== ЛОГ ЗАПУСКА: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
+                $"=== ФАЙЛ: {logFile} ===\n\n");
         }
 
         public static void Log(string message)
         {
-            // Было: HH:mm:ss
-            // Стало: HH:mm:ss.fff (fff = миллисекунды)
             string line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
             Console.WriteLine(line);
             File.AppendAllText(logFile, line + "\n");
         }
 
-
-        // Вывод матрицы поля в лог
-        public static void LogBoard(int[,] board, int gridSize)
+        public static void LogBoard(int[,] board, int width, int height)
         {
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("--- МАТРИЦА ПОЛЯ ---");
-            for (int row = 0; row < gridSize; row++)
+            for (int row = 0; row < height; row++)
             {
-                for (int col = 0; col < gridSize; col++)
+                for (int col = 0; col < width; col++)
                 {
                     int val = board[row, col];
                     if (val == -1) sb.Append(" . ");
@@ -48,5 +52,8 @@ namespace MinesweeperBot
             Console.WriteLine(sb.ToString());
             File.AppendAllText(logFile, sb.ToString());
         }
+
+        // Дополнительно: путь к текущему логу (может пригодиться).
+        public static string CurrentLogFile => logFile;
     }
 }
